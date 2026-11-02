@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id          String   @id @default(uuid())
+  name        String
+  email       String   @unique
+  accountNo   String   @unique
+  type        String   @default("SAVINGS") // SAVINGS | CURRENT | MERCHANT
+  currency    String   @default("INR")
+  balance     Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sentTransactions     Transaction[] @relation("FromAccount")
+  receivedTransactions Transaction[] @relation("ToAccount")
+  ledgerEntries        LedgerEntry[]
+  deviceHistory        DeviceHistory[]
+
+  @@map("accounts")
+}
+
+model Transaction {
+  id              String   @id @default(uuid())
+  idempotencyKey  String   @unique
+  fromAccountId   String
+  toAccountId     String
+  amount          Float
+  currency        String   @default("INR")
+  description     String?
+  status          String   @default("INITIATED") // INITIATED | PROCESSING | SETTLED | FAILED | REVIEW | REVERSED
+  metadata        String?  // JSON string
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  fromAccount    Account         @relation("FromAccount", fields: [fromAccountId], references: [id])
+  toAccount      Account         @relation("ToAccount", fields: [toAccountId], references: [id])
+  ledgerEntries  LedgerEntry[]
+  riskAssessment RiskAssessment?
+  webhookEvents  WebhookEvent[]
+  auditLogs      AuditLog[]
+
+  @@index([fromAccountId])
+  @@index([toAccountId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model LedgerEntry {
+  id            String   @id @default(uuid())
+  transactionId String
+  accountId     String
+  entryType     String   // DEBIT | CREDIT
+  amount        Float
+  currency      String   @default("INR")
+  balanceAfter  Float
+  description   String?
+  createdAt     DateTime @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+  account     Account     @relation(fields: [accountId], references: [id])
+
+  @@index([transactionId])
+  @@index([accountId])
+  @@index([createdAt])
+  @@map("ledger_entries")
+}
+
+model RiskAssessment {
+  id             String    @id @default(uuid())
+  transactionId  String    @unique
+  riskScore      Int       // 0-100
+  riskLevel      String    @default("LOW") // LOW | MEDIUM | HIGH | CRITICAL
+  velocitySpike  Boolean   @default(false)
+  newDevice      Boolean   @default(false)
+  geoMismatch    Boolean   @default(false)
+  amountOutlier  Boolean   @default(false)
+  flaggedSignals String    // JSON string array
+  aiExplanation  String?
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  reviewNotes    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+
+  @@index([riskLevel])
+  @@index([riskScore])
+  @@map("risk_assessments")
+}
+
+model DeviceHistory {
+  id        String   @id @default(uuid())
+  accountId String
+  deviceId  String
+  ipAddress String?
+  location  String?
+  seenAt    DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@unique([accountId, deviceId])
+  @@index([accountId])
+  @@map("device_history")
+}
+
+model ReconciliationReport {
+  id                String   @id @default(uuid())
+  reportDate        DateTime
+  totalDebits       Float
+  totalCredits      Float
+  isBalanced        Boolean
+  discrepancyAmount Float    @default(0)
+  flaggedCount      Int      @default(0)
+  settledCount      Int      @default(0)
+  pendingCount      Int      @default(0)
+  reviewCount       Int      @default(0)
+  reportData        String   // JSON string
+  createdAt         DateTime @default(now())
+
+  @@map("reconciliation_reports")
+}
+
+model WebhookEvent {
+  id            String    @id @default(uuid())
+  transactionId String
+  eventType     String
+  payload       String    // JSON string
+  processed     Boolean   @default(false)
+  processedAt   DateTime?
+  attempts      Int       @default(0)
+  lastError     String?
+  createdAt     DateTime  @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+
+  @@index([processed])
+  @@index([transactionId])
+  @@map("webhook_events")
+}
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  transactionId String?
+  action        String
+  actorId       String?
+  actorType     String   @default("SYSTEM")
+  before        String?  // JSON string
+  after         String?  // JSON string
+  metadata      String?  // JSON string
+  createdAt     DateTime @default(now())
+
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([transactionId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
