@@ -60,3 +60,4 @@ Ensure you have the following installed on your machine:
 
 ### Iconography
 - `lucide-react` (`^0.460.0`): Icon set for banking dashboards
+
